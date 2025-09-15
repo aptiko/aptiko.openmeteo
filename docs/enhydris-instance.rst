@@ -9,7 +9,7 @@ This is an Ansible role for configuring an Enhydris instance on Debian or
 Ubuntu.  It also installs Enhydris (each instance gets its own Enhydris
 installation).  Use ``enhydris_instance`` like this::
 
-  - role: enhydris_instance
+  - role: aptiko.openmeteo.enhydris_instance
     enhydris_version: 2.0.4
     enhydris_major_version: 2
     enhydris_instance_name: openmeteo
