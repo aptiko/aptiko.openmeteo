@@ -1,0 +1,36 @@
+---
+- name: Recompile Enhydris {{ enhydris_instance_name }}
+  command: /usr/bin/python3 -OO -m compileall -x '^/opt/enhydris-{{ enhydris_instance_name }}/venv/' /opt/enhydris-{{ enhydris_instance_name }} /etc/opt/enhydris/{{ enhydris_instance_name }}
+  notify:
+    - Migrate {{ enhydris_instance_name }}
+    - Restart Enhydris {{ enhydris_instance_name }}
+
+- name: "Migrate {{ enhydris_instance_name }}"
+  shell: >
+    export PYTHONPATH=/etc/opt/enhydris/{{ enhydris_instance_name }} &&
+    export DJANGO_SETTINGS_MODULE=settings &&
+    ./venv/bin/python manage.py migrate
+  args:
+    chdir: "/opt/enhydris-{{ enhydris_instance_name }}"
+  when: >
+    dbname|default(enhydris_instance_name) == enhydris_instance_name and
+    dbhost|default("localhost") == "localhost"
+
+- name: "Collect Enhydris {{ enhydris_instance_name }} static files"
+  shell: >
+    export PYTHONPATH=/etc/opt/enhydris/{{ enhydris_instance_name }} &&
+    export DJANGO_SETTINGS_MODULE=settings &&
+    ./venv/bin/python manage.py collectstatic --noinput
+  args:
+    chdir: "/opt/enhydris-{{ enhydris_instance_name }}"
+
+- name: "Restart Enhydris {{ enhydris_instance_name }}"
+  # We don't use the systemd module because it doesn't support globs
+  shell: >
+    systemctl daemon-reload &&
+    service enhydris-{{ enhydris_instance_name }}-* restart
+
+- name: "Restart rabbitmq-server"
+  service:
+    name: rabbitmq-server
+    state: restarted

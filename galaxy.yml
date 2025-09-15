@@ -1,0 +1,17 @@
+namespace: aptiko
+name: openmeteo
+version: 0.1.0-dev0
+readme: README.md
+authors:
+- Antonis Christofides <antonis@antonischristofides.com>
+description: Essential Ansible roles for Debian/Ubuntu servers
+license:
+- GPL-3.0-or-later
+tags: []
+dependencies:
+  git+https://github.com/aptiko/aptiko.general.git: master
+repository: https://github.com/aptiko/ansible.openmeteo
+documentation: https://aptikoopenmeteo.readthedocs.io
+homepage: https://github.com/aptiko/ansible.openmeteo
+issues: https://github.com/aptiko/ansible.openmeteo/issues/
+build_ignore: []

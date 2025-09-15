@@ -1,0 +1,11 @@
+#!/bin/bash
+
+export DJANGO_SETTINGS_MODULE=settings
+export PYTHONPATH=/etc/opt/enhydris/{{ enhydris_instance_name }}:{{ enhydris_install_dir }}
+export PATH={{ enhydris_install_dir }}/venv/bin:/bin:/usr/bin:/usr/sbin
+
+cd {{ enhydris_install_dir }}
+for remote_db in {{ dbsync_remote_dbs|join(" ") }}; do
+    python -Wignore manage.py hcore_remotesyncdb \
+        --remote=$remote_db --app=hcore --exclude=UserProfile --silent
+done

@@ -1,0 +1,18 @@
+[Unit]
+Description="Enhydris {{ enhydris_instance_name }} celerybeat"
+
+[Service]
+User={{ dbname|default(enhydris_instance_name) }}
+Group={{ dbname|default(enhydris_instance_name) }}
+WorkingDirectory=/opt/enhydris-{{ enhydris_instance_name }}
+Environment="PYTHONPATH=/etc/opt/enhydris/{{ enhydris_instance_name }}"
+Environment="DJANGO_SETTINGS_MODULE=settings"
+ExecStart=/opt/enhydris-{{ enhydris_instance_name }}/venv/bin/celery \
+    --app=enhydris.celery:app beat --loglevel=info \
+    --schedule=/var/opt/enhydris/{{ enhydris_instance_name }}/celerybeat.db \
+    --pidfile=/var/opt/enhydris/{{ enhydris_instance_name }}/celerybeat.pid \
+    --logfile=/var/log/enhydris/{{ enhydris_instance_name }}/celerybeat.log
+
+[Install]
+WantedBy=multi-user.target
+

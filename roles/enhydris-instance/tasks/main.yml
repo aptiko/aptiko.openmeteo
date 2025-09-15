@@ -1,0 +1,403 @@
+---
+- name: Install apt packages needed for Enhydris
+  apt:
+    name:
+     - virtualenv
+     - python3-gdal
+     - python3-psycopg2
+     - git
+     - build-essential  # Some dependencies may need compilation
+     - python3-dev  # Some dependencies may need compilation
+     - libjpeg-dev  # Pillow (indirect dependency) may need compilation
+     - libfreetype6-dev  # Also for Pillow
+
+- name: "Install Enhydris for {{ enhydris_instance_name }}"
+  git:
+    repo: https://github.com/openmeteo/enhydris.git
+    dest: /opt/enhydris-{{ enhydris_instance_name }}
+    version: "{{ enhydris_version }}"
+  notify:
+  - Collect Enhydris {{ enhydris_instance_name }} static files
+  - Recompile Enhydris {{ enhydris_instance_name }}
+
+- name: Install requirements for Enhydris {{ enhydris_instance_name }}
+  pip:
+    requirements: "/opt/enhydris-{{ enhydris_instance_name }}/requirements.txt"
+    virtualenv: "/opt/enhydris-{{ enhydris_instance_name }}/venv"
+    virtualenv_site_packages: yes
+
+- name: Install django-sendmail-backend
+  pip:
+    name: django-sendmail-backend
+    virtualenv: /opt/enhydris-{{ enhydris_instance_name }}/venv
+    virtualenv_site_packages: yes
+
+- name: Install Enhydris aggregator for {{ enhydris_instance_name }}
+  git:
+    repo: https://github.com/openmeteo/enhydris-aggregator.git
+    dest: "/opt/enhydris-{{ enhydris_instance_name }}/enhydris-aggregator"
+    version: master
+  when: enhydris_aggregator|bool
+  notify:
+  - Recompile Enhydris {{ enhydris_instance_name }}
+
+- name: Link Enhydris aggregator for {{ enhydris_instance_name }}
+  file:
+    state: link
+    path: /opt/enhydris-{{ enhydris_instance_name }}/enhydris_aggregator
+    src: /opt/enhydris-{{ enhydris_instance_name }}/enhydris-aggregator/enhydris_aggregator
+  when: enhydris_aggregator|bool
+
+- name: Install Enhydris aggregator requirements for {{ enhydris_instance_name }}
+  pip:
+    requirements: "/opt/enhydris-{{ enhydris_instance_name }}/enhydris-aggregator/requirements.txt"
+    virtualenv: "/opt/enhydris-{{ enhydris_instance_name }}/venv"
+    virtualenv_site_packages: yes
+  when: enhydris_aggregator|bool
+
+- name: Install Enhydris openhigis for {{ enhydris_instance_name }}
+  git:
+    repo: https://github.com/openmeteo/enhydris-openhigis.git
+    dest: "/opt/enhydris-{{ enhydris_instance_name }}/enhydris-openhigis"
+    version: "{{ enhydris_openhigis_version|default('master') }}"
+  notify:
+  - Recompile Enhydris {{ enhydris_instance_name }}
+  when: "use_enhydris_openhigis|default(False)"
+
+- name: Link Enhydris openhigis for {{ enhydris_instance_name }}
+  file:
+    state: link
+    path: /opt/enhydris-{{ enhydris_instance_name }}/enhydris_openhigis
+    src: /opt/enhydris-{{ enhydris_instance_name }}/enhydris-openhigis/enhydris_openhigis
+  when: "use_enhydris_openhigis|default(False)"
+
+- name: Install Enhydris openhigis requirements for {{ enhydris_instance_name }}
+  pip:
+    requirements: "/opt/enhydris-{{ enhydris_instance_name }}/enhydris-openhigis/requirements.txt"
+    virtualenv: "/opt/enhydris-{{ enhydris_instance_name }}/venv"
+    virtualenv_site_packages: yes
+  when: "use_enhydris_openhigis|default(False)"
+
+- name: Create group {{ enhydris_instance_name }}
+  group: name={{ enhydris_instance_name }} system=yes
+
+- name: Create user {{ dbname|default(enhydris_instance_name) }}
+  user:
+    name: "{{ dbname|default(enhydris_instance_name) }}"
+    group: "{{ dbname|default(enhydris_instance_name) }}"
+    system: yes
+
+- name: Create PostgreSQL user {{ enhydris_instance_name }}
+  postgresql_user:
+    login_host: '{{ dbhost|default("localhost") }}'
+    login_user: postgres
+    login_password: "{{ postgres_password }}"
+    name: "{{ enhydris_instance_name }}"
+    password: "{{ secret_key }}"
+  when: dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Create PostgreSQL user mapserver
+  postgresql_user:
+    login_host: '{{ dbhost|default("localhost") }}'
+    login_user: postgres
+    login_password: "{{ postgres_password }}"
+    name: "mapserver"
+    password: "{{ secret_key }}"
+  when: "use_enhydris_openhigis|default(False) and dbname|default(enhydris_instance_name) == enhydris_instance_name"
+
+- name: Create PostgreSQL user anton
+  postgresql_user:
+    login_host: '{{ dbhost|default("localhost") }}'
+    login_user: postgres
+    login_password: "{{ postgres_password }}"
+    name: "anton"
+  when: "use_enhydris_openhigis|default(False) and dbname|default(enhydris_instance_name) == enhydris_instance_name"
+
+- name: Create database
+  postgresql_db:
+    name: "{{ dbname|default(enhydris_instance_name) }}"
+    template: template_postgis
+    owner: "{{ dbuser|default(enhydris_instance_name) }}"
+  become: yes
+  become_user: postgres
+  when: dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Create extension timescaledb
+  community.postgresql.postgresql_ext:
+    name: timescaledb
+    db: "{{ dbname|default(enhydris_instance_name) }}"
+  become: yes
+  become_user: postgres
+  when: dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Create /var/opt/enhydris/{{ enhydris_instance_name }} directory
+  # This directory would be created anyway by other tasks, which however might
+  # not run if there's a different dbname, and it's needed in some cases (for
+  # example celery may create some pid files in there.)
+  file:
+    dest: /var/opt/enhydris/{{ enhydris_instance_name }}
+    state: directory
+    owner: "{{ dbname|default(enhydris_instance_name) }}"
+
+- name: Create media files directory
+  file:
+    dest: /var/opt/enhydris/{{ enhydris_instance_name }}/media
+    state: directory
+    owner: "{{ enhydris_instance_name }}"
+  when: dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Create timeseries data directory
+  file:
+    dest: '{{ enhydris_timeseries_data_dir | default("/var/opt/enhydris/" ~ enhydris_instance_name ~ "/timeseries_data") }}'
+    state: directory
+    owner: "{{ enhydris_instance_name }}"
+  when: dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Create mapserver configuration file
+  copy:
+    src: mapserver.conf
+    dest: /etc/mapserver.conf
+    mode: 0644
+  when: "use_enhydris_openhigis|default(False)"
+
+- name: Create mapserver log dir (for enhydris)
+  file: state=directory name=/var/log/mapserver owner=www-data group=www-data
+  when: "use_enhydris_openhigis|default(False)"
+
+- name: Create enhydris {{ enhydris_instance_name }} configuration directory
+  file: dest=/etc/opt/enhydris/{{ enhydris_instance_name }} state=directory
+
+- name: Create Enhydris {{ enhydris_instance_name }} static directory
+  file:
+    state: directory
+    path: /var/cache/enhydris/{{ enhydris_instance_name }}/static
+
+- name: Setup Enhydris {{ enhydris_instance_name }} settings.py
+  template:
+    src: settings.py
+    dest: /etc/opt/enhydris/{{ enhydris_instance_name }}/settings.py
+  notify:
+  - Collect Enhydris {{ enhydris_instance_name }} static files
+  - Recompile Enhydris {{ enhydris_instance_name }}
+
+- name: Setup Enhydris {{ enhydris_instance_name }} urls.py
+  template:
+    src: urls.py
+    dest: /etc/opt/enhydris/{{ enhydris_instance_name }}/urls.py
+  notify:
+  - Recompile Enhydris {{ enhydris_instance_name }}
+
+- name: Setup enhydris base template for Enhydris 2
+  copy:
+    src: "{{ base_template }}"
+    dest: /etc/opt/enhydris/{{ enhydris_instance_name }}/templates/base.html
+  when: base_template is defined and enhydris_major_version == 2
+  notify:
+  - Restart Enhydris {{ enhydris_instance_name }}
+
+- name: Skin for enhydris ({{ enhydris_instance_name }})
+  git:
+    repo: "{{ skinrepo }}"
+    dest: /etc/opt/enhydris/{{ enhydris_instance_name }}/skin
+    version: production
+  when: skinrepo is defined
+  notify:
+  - Restart Enhydris {{ enhydris_instance_name }}
+
+- name: Setup enhydris default base template for Enhydris 2
+  copy: 
+    content: "{% raw %}{% extends 'base-sample.html' %}{% endraw %}\n"
+    dest: /etc/opt/enhydris/{{ enhydris_instance_name }}/templates/base.html
+  when: not (base_template is defined) and enhydris_major_version == 2
+
+- name: Create enhydris static directory
+  file: dest=/etc/opt/enhydris/{{ enhydris_instance_name }}/static state=directory
+  when: additional_static_files is defined
+
+- name: Setup additional enhydris static files
+  copy:
+    src: "{{ additional_static_files }}/"
+    dest: "/etc/opt/enhydris/{{ enhydris_instance_name }}/static/"
+  when: additional_static_files is defined
+  notify:
+  - Collect Enhydris {{ enhydris_instance_name }} static files
+  - Restart Enhydris {{ enhydris_instance_name }}
+
+- name: Create enhydris django cache directory
+  file:
+    dest: /var/cache/enhydris/{{ enhydris_instance_name }}/django_cache
+    state: directory
+    owner: "{{ enhydris_instance_name }}"
+    group: "{{ enhydris_instance_name }}"
+  when: "dbname is not defined"
+
+- name: Create enhydris-synoptic output directory
+  file:
+    dest: /var/cache/enhydris/{{ enhydris_instance_name }}/synoptic
+    state: directory
+    owner: "{{ dbname|default(enhydris_instance_name) }}"
+    group: "{{ dbname|default(enhydris_instance_name) }}"
+
+- name: Create PostgreSQL unaccent extension
+  postgresql_ext:
+    name: unaccent
+    db: "{{ dbname|default(enhydris_instance_name) }}"
+  become: true
+  become_user: postgres
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+    - dbhost|default("localhost") == "localhost"
+
+- name: Check whether db is synced
+  shell: >
+    echo "select * from django_site;" |
+    sudo -u postgres psql {{ dbname|default(enhydris_instance_name) }} 2>&1 |
+    grep ERROR
+  args:
+    chdir: /etc/opt/enhydris/{{ enhydris_instance_name }}
+  register: check_db_not_synced
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+
+- name: Sync {{ enhydris_instance_name }} database
+  # The password hashed below is "topsecret"
+  shell: >
+    export PYTHONPATH=/etc/opt/enhydris/{{ enhydris_instance_name }} &&
+    export DJANGO_SETTINGS_MODULE=settings &&
+    /opt/enhydris-{{ enhydris_instance_name }}/venv/bin/python manage.py migrate &&
+    /opt/enhydris-{{ enhydris_instance_name }}/venv/bin/python manage.py createsuperuser
+    --username=admin --email=nobody@example.com --noinput
+    && (
+    echo "update auth_user set password='pbkdf2_sha256\$10000\$EkSCGqGowJhN\$0WuikmR5lAVwZbHcR8ODit6Nktth5Rj0MjXIvqPA7jQ=' where username='admin';"
+    |
+    sudo -u postgres psql {{ dbname|default(enhydris_instance_name) }} )
+  args:
+    chdir: "/opt/enhydris-{{ enhydris_instance_name }}"
+  when:
+    - check_db_not_synced.rc == 0
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+    - dbhost|default("localhost") == "localhost"
+
+- name: Setup apache for enhydris {{ enhydris_instance_name }}
+  template:
+    src: apache-enhydris.conf
+    dest: /etc/apache2/snippets/{{ site_domain }}/enhydris.conf
+  notify:
+   - Reload apache
+
+- name: Put enhydris-aggregator on cron for {{ enhydris_instance_name }}
+  copy:
+    dest: /etc/cron.daily/enhydris-aggregator-{{ enhydris_instance_name }}
+    content: |
+      #!/bin/sh
+      export PYTHONPATH=/etc/opt/enhydris/{{ enhydris_instance_name }}
+      export DJANGO_SETTINGS_MODULE=settings
+      cd "/opt/enhydris-{{ enhydris_instance_name }}"
+      su {{ enhydris_instance_name }} -c \
+          '/opt/enhydris-{{ enhydris_instance_name }}/venv/bin/python manage.py aggregate'
+    mode: 0755
+  when: enhydris_aggregator|bool
+
+- name: Cron for clearing Django sessions for {{ enhydris_instance_name }}
+  copy:
+    dest: /etc/cron.daily/clear-sessions-{{ enhydris_instance_name }}
+    content: |
+      #!/bin/sh
+      export PYTHONPATH=/etc/opt/enhydris/{{ enhydris_instance_name }}
+      export DJANGO_SETTINGS_MODULE=settings
+      cd /opt/enhydris-{{ enhydris_instance_name }}
+      su {{ enhydris_instance_name }} -c \
+          '/opt/enhydris-{{ enhydris_instance_name }}/venv/bin/python manage.py clearsessions'
+    mode: 0755
+  when: dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Install gunicorn for {{ enhydris_instance_name }}
+  pip:
+    name: gunicorn
+    version: 23.0.0
+    virtualenv: "/opt/enhydris-{{ enhydris_instance_name }}/venv"
+    virtualenv_site_packages: yes
+    virtualenv_python: python3
+
+- name: Create Enhydris {{ enhydris_instance_name }} log directory
+  file:
+    dest: /var/log/enhydris/{{ enhydris_instance_name }}
+    state: directory
+    owner: "{{ dbname|default(enhydris_instance_name) }}"
+
+- name: Create enhydris-{{ enhydris_instance_name }} gunicorn service
+  template:
+    src: enhydris-gunicorn.service
+    dest: /etc/systemd/system/enhydris-{{ enhydris_instance_name }}-gunicorn.service
+
+- name: Enable enhydris-{{ enhydris_instance_name }} gunicorn service
+  systemd:
+    name: enhydris-{{ enhydris_instance_name }}-gunicorn
+    enabled: yes
+    state: started
+    daemon-reload: yes
+
+- name: Install RabbitMQ (needed for Celery of Enhydris)
+  apt: name=rabbitmq-server
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Create enhydris-{{ enhydris_instance_name }}-celery service
+  template:
+    src: enhydris-celery.service
+    dest: /etc/systemd/system/enhydris-{{ enhydris_instance_name }}-celery.service
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Enable enhydris-{{ enhydris_instance_name }}-celery service
+  systemd:
+    name: enhydris-{{ enhydris_instance_name }}-celery
+    enabled: yes
+    state: started
+    daemon-reload: yes
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Create enhydris-{{ enhydris_instance_name }}-celerybeat service
+  template:
+    src: enhydris-celerybeat.service
+    dest: /etc/systemd/system/enhydris-{{ enhydris_instance_name }}-celerybeat.service
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Enable enhydris-{{ enhydris_instance_name }}-celerybeat service
+  systemd:
+    name: enhydris-{{ enhydris_instance_name }}-celerybeat
+    enabled: yes
+    state: started
+    daemon-reload: yes
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+
+- name: Install rabbitmq prometheus plugin
+  community.rabbitmq.rabbitmq_plugin:
+    names: rabbitmq_prometheus
+    state: enabled
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+    - prometheus_server_ips|default(False)
+
+- name: Ensure rabbitmq.conf exists
+  copy:
+    dest: /etc/rabbitmq/rabbitmq.conf
+    content: ""
+    force: no
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+    - prometheus_server_ips|default(False)
+
+- name: Ensure rabbitmq prometheus plugin is listening on all interfaces
+  lineinfile:
+    path: /etc/rabbitmq/rabbitmq.conf
+    regexp: '^prometheus.tcp.ip\s*='
+    line: "prometheus.tcp.ip = ::"
+  when:
+    - dbname|default(enhydris_instance_name) == enhydris_instance_name
+    - prometheus_server_ips|default(False)
+  notify: Restart rabbitmq-server

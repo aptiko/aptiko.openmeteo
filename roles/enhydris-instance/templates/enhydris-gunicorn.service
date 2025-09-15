@@ -1,0 +1,17 @@
+[Unit]
+Description="Enhydris {{ enhydris_instance_name }}"
+
+[Service]
+User={{ dbname|default(enhydris_instance_name) }}
+Group={{ dbname|default(enhydris_instance_name) }}
+WorkingDirectory=/opt/enhydris-{{ enhydris_instance_name }}
+Environment="PYTHONPATH=/etc/opt/enhydris/{{ enhydris_instance_name }}"
+Environment="DJANGO_SETTINGS_MODULE=settings"
+ExecStart=/opt/enhydris-{{ enhydris_instance_name }}/venv/bin/gunicorn \
+    {% if enhydris_version < '2.2' %}enhydris.{% endif %}wsgi:application \
+    --workers=4 --log-level=warning --bind=127.0.0.1:{{ gunicorn_port }} \
+    --timeout=160 \
+    --log-file=/var/log/enhydris/{{ enhydris_instance_name }}/gunicorn.log
+
+[Install]
+WantedBy=multi-user.target
