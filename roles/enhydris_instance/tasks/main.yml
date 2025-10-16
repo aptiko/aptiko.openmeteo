@@ -125,7 +125,7 @@
 - name: Create extension timescaledb
   community.postgresql.postgresql_ext:
     name: timescaledb
-    db: "{{ dbname|default(enhydris_instance_name) }}"
+    login_db: "{{ dbname|default(enhydris_instance_name) }}"
   become: yes
   become_user: postgres
   when: dbname|default(enhydris_instance_name) == enhydris_instance_name
@@ -241,7 +241,7 @@
 - name: Create PostgreSQL unaccent extension
   postgresql_ext:
     name: unaccent
-    db: "{{ dbname|default(enhydris_instance_name) }}"
+    login_db: "{{ dbname|default(enhydris_instance_name) }}"
   become: true
   become_user: postgres
   when:
@@ -381,7 +381,7 @@
     state: enabled
   when:
     - dbname|default(enhydris_instance_name) == enhydris_instance_name
-    - prometheus_server_ips|default(False)
+    - prometheus_server_ips|default([])|length > 0
 
 - name: Ensure rabbitmq.conf exists
   copy:
@@ -390,7 +390,7 @@
     force: no
   when:
     - dbname|default(enhydris_instance_name) == enhydris_instance_name
-    - prometheus_server_ips|default(False)
+    - prometheus_server_ips|default([])|length > 0
 
 - name: Ensure rabbitmq prometheus plugin is listening on all interfaces
   lineinfile:
@@ -399,5 +399,5 @@
     line: "prometheus.tcp.ip = ::"
   when:
     - dbname|default(enhydris_instance_name) == enhydris_instance_name
-    - prometheus_server_ips|default(False)
+    - prometheus_server_ips|default([])|length > 0
   notify: Restart rabbitmq-server
