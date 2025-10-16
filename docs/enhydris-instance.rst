@@ -193,6 +193,15 @@ Variables
    setting. They must contain JavaScript. They may not contain triple
    string characters.
 
+.. data:: enhydris_additional_nonenhydris_paths
+
+   Apache is set to act as a reverse proxy, sending almost all paths to
+   Enhydris. However, it does not do so for "media/", "static/",
+   "synoptic/" and "cgi-bin/". This variable (a list) can be used to
+   specify additional paths to be excluded, such as "grafana/" or
+   "awstats/". The items of the list must end but not begin with a
+   slash.
+
 .. data:: extra_settings
 
    A string that is appended to the Enhydris (Django) settings as is.
