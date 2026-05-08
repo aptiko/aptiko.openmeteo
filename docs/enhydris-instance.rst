@@ -209,3 +209,8 @@ Variables
 .. data:: enhydris_instance_celery_concurrency
 
    The number of celery workers; default 1.
+
+.. data:: enhydris_instance_enhydris_repo
+
+   The URL of the repository with Enhydris; the default is
+   ``https://github.com/openmeteo/enhydris.git``.

@@ -13,7 +13,7 @@
 
 - name: "Install Enhydris for {{ enhydris_instance_name }}"
   git:
-    repo: https://github.com/openmeteo/enhydris.git
+    repo: "{{ enhydris_instance_enhydris_repo }}"
     dest: /opt/enhydris-{{ enhydris_instance_name }}
     version: "{{ enhydris_version }}"
   notify:
